@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import User from "../configs/models/User";
+import User from "../models/User";
 import bcrypt from "bcrypt";
  
 //   Controllers for user registeration 
