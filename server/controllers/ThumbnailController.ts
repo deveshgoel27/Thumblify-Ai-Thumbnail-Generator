@@ -88,51 +88,86 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
         prompt += `The thumbnail should be ${aspect_ratio}, visually stunning, and deigned to maximize click-through rate. Make it bold, professional, and impossible to ignore.`
 
-        //Generate the image using the ai model
-        const response: any = await ai.models.generateContent({
-            model,
-            contents: [prompt],
-            config: generationConfig
-        })
+        let imageUrl: string | null = null;
+        let usedFallback = false;
 
-        // Check if the response is valid
-        if (!response?.candidates?.[0]?.content?.parts) {
-            throw new Error('Unexpected response')
-        }
+        try {
+            //Generate the image using the ai model
+            const response: any = await ai.models.generateContent({
+                model,
+                contents: [prompt],
+                config: generationConfig
+            })
 
-        const parts = response.candidates[0].content.parts;
+            // Check if the response is valid
+            if (!response?.candidates?.[0]?.content?.parts) {
+                throw new Error('Unexpected response from Gemini')
+            }
 
-        let finalBuffer: Buffer | null = null;
+            const parts = response.candidates[0].content.parts;
+            let finalBuffer: Buffer | null = null;
 
-        for (const part of parts) {
-            if (part.inlineData) {
-                finalBuffer = Buffer.from(part.inlineData.data, 'base64')
+            for (const part of parts) {
+                if (part.inlineData) {
+                    finalBuffer = Buffer.from(part.inlineData.data, 'base64')
+                }
+            }
+
+            const filename = `final-output-${Date.now()}.png`;
+            const filePath = path.join('images', filename);
+
+            //Create the images directory if it doesn't exist
+            fs.mkdirSync('images', { recursive: true })
+
+            //write the final image to the file
+            fs.writeFileSync(filePath, finalBuffer!);
+
+            const uploadResult = await cloudinary.uploader.upload
+                (filePath, { resource_type: 'image' })
+
+            imageUrl = uploadResult.url;
+
+            //remove image file form disk
+            fs.unlinkSync(filePath)
+
+        } catch (geminiError: any) {
+            const errorStatus = geminiError?.status || geminiError?.code;
+            const errorMessage = geminiError?.message || geminiError?.toString();
+            
+            console.error(`[Gemini API Error] Status: ${errorStatus}, Message: ${errorMessage}`);
+
+            // Check for quota exceeded (429 / RESOURCE_EXHAUSTED)
+            if (errorStatus === 429 || errorMessage?.includes('RESOURCE_EXHAUSTED') || errorMessage?.includes('429')) {
+                console.warn(`[Quota Exceeded] Quota limit reached for user ${userId}`);
+                return res.status(429).json({ message: 'API quota exceeded. Please try again later.' });
+            }
+
+            // Use fallback image generator
+            console.warn(`[Fallback] Gemini failed, using pollinations.ai for user ${userId}`);
+            try {
+                // Sanitize prompt for URL encoding
+                const sanitizedPrompt = encodeURIComponent(prompt.substring(0, 500));
+                imageUrl = `https://image.pollinations.ai/prompt/${sanitizedPrompt}`;
+                usedFallback = true;
+            } catch (fallbackError: any) {
+                console.error(`[Fallback Error] Pollinations.ai also failed: ${fallbackError.message}`);
+                return res.status(500).json({ message: 'Thumbnail generation failed' });
             }
         }
 
-        const filename = `final-output-${Date.now()}.png`;
-        const filePath = path.join('images', filename);
-
-        //Create the images directory if it doesn't exist
-        fs.mkdirSync('images', { recursive: true })
-
-        //write the final image to the file
-        fs.writeFileSync(filePath, finalBuffer!);
-
-        const uploadResult = await cloudinary.uploader.upload
-            (filePath, { resource_type: 'image' })
-
-        thumbnail.image_url = uploadResult.url;
+        // Update thumbnail with image URL
+        thumbnail.image_url = imageUrl;
         thumbnail.isGenerating = false;
+        if (usedFallback) {
+            thumbnail.prompt_used = `${thumbnail.prompt_used} (generated with fallback)`;
+        }
         await thumbnail.save()
 
-        res.json({ message: 'Thumbnail Generated', thumbnail })
+        res.json({ message: 'Thumbnail Generated' + (usedFallback ? ' (using fallback)' : ''), thumbnail })
 
-        //remove image file form disk
-        fs.unlinkSync(filePath)
     } catch (error: any) {
-        console.log(error);
-        res.status(500).json({ message: error.message});
+        console.error(`[Generation Controller Error] ${error.message}`, error);
+        res.status(500).json({ message: 'Thumbnail generation failed' });
     }
 }
 
@@ -147,7 +182,7 @@ export const deleteThumbnail = async (req: Request, res: Response) => {
          
          res.json({message: 'Thumbnail deleted successfully'});
     }  catch (error: any) {
-        console.log(error);
-        res.status(500).json({ message: error.message});
+        console.error(`[Delete Thumbnail Error] ${error.message}`, error);
+        res.status(500).json({ message: 'Failed to delete thumbnail' });
     }
 }
