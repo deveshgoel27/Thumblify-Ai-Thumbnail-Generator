@@ -62,8 +62,8 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
                 setUser(null);
                 setIsLoggedIn(false)
                 toast.success(data.message)
-             } catch (error) {
-                console.log(error);
+             } catch (error: any) {
+                toast.error(error.response?.data?.message || error.message);
              }
     }
 
@@ -74,8 +74,8 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
                     setUser(data.user as IUser)
                     setIsLoggedIn(true)
                 }
-             } catch (error) {
-                console.log(error);
+             } catch (error: any) {
+                // Silent fail for verify - user not authenticated yet
              }
     }
 
