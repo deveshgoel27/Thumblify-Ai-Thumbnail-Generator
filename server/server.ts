@@ -7,6 +7,7 @@ import MongoStore from 'connect-mongo';
 import AuthRouter from './routes/AuthRoutes';
 import ThumbnailRouter from './routes/ThumbnailRoutes';
 import UserRouter from './routes/UserRoutes';
+import { v2 as cloudinary } from 'cloudinary';
 
 declare module 'express-session' {
     interface SessionData {
