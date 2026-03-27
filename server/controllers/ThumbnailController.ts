@@ -44,37 +44,22 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         });
 
         // Build enriched prompt
-        let prompt = `
-Create a highly engaging YouTube thumbnail.
+        let prompt = `Create a ${stylePrompts[style as keyof typeof stylePrompts] ?? 'professional'} for: "${title}". `;
 
-Video title: "${title}"
+        if (color_scheme) {
+            prompt += `Use a ${colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions]} color scheme. `;
+        }
 
-Main concept:
-${user_prompt || title}
+        if (text_overlay) {
+            prompt += `Include bold text overlay saying "${text_overlay}" on the thumbnail. `;
+        }
 
-Scene:
-Visually represent the concept clearly. Focus on the main subject described above.
+        if (user_prompt) {
+            prompt += `Additional details: ${user_prompt}. `;
+        }
 
-Style:
-${stylePrompts[style as keyof typeof stylePrompts] ?? "professional thumbnail style"}
+        prompt += `The thumbnail should be ${aspect_ratio ?? '16:9'}, visually stunning, and designed to maximize click-through rate. ${PROMPT_SUFFIX}.`;
 
-${color_scheme ? `Color palette: ${colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions]}` : ""}
-
-${text_overlay ? `Add bold, large, readable text: "${text_overlay}"` : ""}
-
-Composition:
-- Eye-catching YouTube thumbnail
-- High contrast
-- Clear subject focus
-- Cinematic lighting
-- Professional design
-- No irrelevant objects
-- Match the topic strictly
-
-Aspect ratio: ${aspect_ratio ?? "16:9"}
-
-Ultra detailed, sharp, trending YouTube thumbnail style.
-`;
         let imageUrl: string | null = null;
         let usedFallback = false;
 
