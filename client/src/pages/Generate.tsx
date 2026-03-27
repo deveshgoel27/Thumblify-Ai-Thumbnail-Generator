@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom"
-import { colorSchemes, dummyThumbnails, type AspectRatio, type IThumbnail, type ThumbnailStyle } from "../assets/assets";
+import { colorSchemes, type AspectRatio, type IThumbnail, type ThumbnailStyle } from "../assets/assets";
 import SoftBackDrop from "../components/SoftBackDrop";
 
 import AspectRatioSelector from "../components/AspectRatioSelector";
@@ -73,7 +73,7 @@ const Generate = () => {
 
   const fetchThumbnail = async () => {
    try {
-    const {data} = await api.get(`/api/user/thumbnail${id}`);
+    const {data} = await api.get(`/api/user/thumbnail/${id}`);
     setThumbnail(data?.thumbnail as IThumbnail);
     setLoading(!data?.thumbnail?.image_url);
     setAdditionalDetails(data?.thumbnail?.user_prompt)
