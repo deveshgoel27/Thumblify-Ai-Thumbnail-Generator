@@ -8,6 +8,7 @@ import Generate from "./pages/Generate";
 import MyGeneration from "./pages/MyGeneration";
 import YtPreview from "./pages/YtPreview";
 import Login from "./components/Login";
+import ResetPassword from "./pages/ResetPassword";
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
@@ -31,6 +32,7 @@ export default function App() {
                 <Route path="/my-generation" element={<MyGeneration />} />
                 <Route path="/yt-preview" element={<YtPreview />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
             </Routes>
             <Footer />
         </>

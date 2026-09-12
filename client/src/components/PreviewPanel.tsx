@@ -2,7 +2,7 @@ import type { AspectRatio, IThumbnail } from "../assets/assets";
 import { DownloadIcon, ImageIcon, Loader2Icon } from "lucide-react";
 
 const PreviewPanel = ({ thumbnail, isLoading, aspectRatio }:
-    { thumbnail: IThumbnail | null, isLoading: Boolean; aspectRatio: AspectRatio }
+    { thumbnail: IThumbnail | null, isLoading: boolean; aspectRatio: AspectRatio }
 ) => {
 
     const aspectClasses = {
@@ -30,7 +30,7 @@ const PreviewPanel = ({ thumbnail, isLoading, aspectRatio }:
                         <Loader2Icon className="size-8 animate-spin text-zinc-400" />
                         <div className="text-center">
                             <p className="text-sm font-medium text-zinc-200">AI is creating your thumbnail...</p>
-                            <p className="mt-1 text-xs text-zinc-400">This may take 10-20 seconds</p>
+                            <p className="mt-1 text-xs text-zinc-400">This may take 15-30 seconds</p>
                         </div>
                     </div>
                 )}

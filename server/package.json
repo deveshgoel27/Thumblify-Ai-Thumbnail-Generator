@@ -6,14 +6,14 @@
   "scripts": {
     "start": "tsx server.ts",
     "server": "nodemon --exec tsx server.ts",
-    "build": "tsc",
-    "type": "module"
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.9.0",
     "connect-mongo": "^6.0.0",
@@ -21,7 +21,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "mongoose": "^9.2.4"
+    "mongoose": "^9.2.4",
+    "nodemailer": "^8.0.10"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -29,6 +30,7 @@
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.18.2",
     "@types/node": "^25.3.5",
+    "@types/nodemailer": "^8.0.1",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",

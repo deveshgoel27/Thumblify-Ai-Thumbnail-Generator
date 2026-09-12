@@ -1,12 +1,10 @@
 import mongoose from 'mongoose';
 
 const connectDB = async ()=> {
-    try {
-        mongoose.connection.on('connected',()=>console.log('MongoDB connected'))
-        await mongoose.connect(process.env.MONGODB_URI as string)
-    } catch (error) {
-        console.error("Error connecting to MongoDB:", error)
-    }
+    mongoose.connection.on('connected',()=>console.log('MongoDB connected'))
+    // Let the caller decide what to do on failure (e.g. exit cleanly)
+    // instead of silently swallowing it and letting the app start with no DB.
+    await mongoose.connect(process.env.MONGODB_URI as string)
 }
 
 export default connectDB;

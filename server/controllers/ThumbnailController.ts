@@ -1,40 +1,21 @@
 import { Request, Response } from "express";
 import Thumbnail from "../models/Thumbnail";
-import { generateImage } from "../configs/ai";
-import path from "node:path";
-import fs from "node:fs";
-import { v2 as cloudinary } from 'cloudinary';
+import { buildThumbnailPrompt, generateThumbnailImage } from "../services/imageService";
 
-const stylePrompts = {
-    'Bold & Graphic': 'eye-catching thumbnail, bold typography, vibrant colors, expressive facial reaction, dramatic lighting, high contrast, click-worthy composition, professional style',
-    'Tech/Futuristic': 'futuristic thumbnail, sleek modern design, digital UI elements, glowing accents, holographic effects, cyber-tech aesthetic, sharp lighting, high-tech atmosphere',
-    'Minimalist': 'minimalist thumbnail, clean layout, simple shapes, limited color palette, plenty of negative space, modern flat design, clear focal point',
-    'Photorealistic': 'photorealistic thumbnail, ultra-realistic lighting, natural skin tones, candid moment, DSLR-style photography, lifestyle realism, shallow depth of field',
-    'Illustrated': 'illustrated thumbnail, custom digital illustration, stylized characters, bold outlines, vibrant colors, creative cartoon or vector art style',
-}
-
-const colorSchemeDescriptions = {
-    vibrant: 'vibrant and energetic colors, high saturation, bold contrasts, eye-catching palette',
-    sunset: 'warm sunset tones, orange pink and purple hues, soft gradients, cinematic glow',
-    forest: 'natural green tones, earthy colors, calm and organic palette, fresh atmosphere',
-    neon: 'neon glow effects, electric blues and pinks, cyberpunk lighting, high contrast glow',
-    purple: 'purple-dominant color palette, magenta and violet tones, modern and stylish mood',
-    monochrome: 'black and white color scheme, high contrast, dramatic lighting, timeless aesthetic',
-    ocean: 'cool blue and teal tones, aquatic color palette, fresh and clean atmosphere',
-    pastel: 'soft pastel colors, low saturation, gentle tones, calm and friendly aesthetic',
-}
-
-const PROMPT_SUFFIX = 'YouTube thumbnail, bold text, vibrant colors, high contrast, modern design, 16:9, eye-catching';
-
+// Controller for Thumbnail Generation
 export const generateThumbnail = async (req: Request, res: Response) => {
     try {
         const { userId } = req.session;
         const { title, prompt: user_prompt, style, aspect_ratio, color_scheme, text_overlay } = req.body;
 
+        if (!title?.trim()) {
+            return res.status(400).json({ message: 'Title is required' });
+        }
+
+        // 1. Create a DB record immediately so the frontend can poll for status
         const thumbnail = await Thumbnail.create({
             userId,
             title,
-            prompt_used: user_prompt,
             user_prompt,
             style,
             aspect_ratio,
@@ -43,93 +24,55 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             isGenerating: true,
         });
 
-        // Build enriched prompt
-        let prompt = `Create a ${stylePrompts[style as keyof typeof stylePrompts] ?? 'professional'} for: "${title}". `;
+        // 2. Build an enriched prompt from all user inputs
+        const promptOptions = {
+            title,
+            style,
+            color_scheme,
+            text_overlay,
+            user_prompt,
+            aspect_ratio,
+        };
+        const prompt = await buildThumbnailPrompt(promptOptions);
 
-        if (color_scheme) {
-            prompt += `Use a ${colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions]} color scheme. `;
-        }
+        console.log(`[ThumbnailController] Generating for user ${userId} | style: ${style} | ratio: ${aspect_ratio}`);
 
-        if (text_overlay) {
-            prompt += `Include bold text overlay saying "${text_overlay}" on the thumbnail. `;
-        }
-
-        if (user_prompt) {
-            prompt += `Additional details: ${user_prompt}. `;
-        }
-
-        prompt += `The thumbnail should be ${aspect_ratio ?? '16:9'}, visually stunning, and designed to maximize click-through rate. ${PROMPT_SUFFIX}.`;
-
-        let imageUrl: string | null = null;
-        let usedFallback = false;
-
+        // 3. Generate via service (Cloudflare FLUX.2 klein → FLUX.1 schnell fallback)
+        let imageResult: { imageUrl: string; provider: string };
         try {
-            // Generate image via HuggingFace Stable Diffusion
-            const imageBuffer = await generateImage(prompt);
+            imageResult = await generateThumbnailImage(prompt, promptOptions);
+        } catch (genError: any) {
+            // Roll back the DB record so the user can try again cleanly
+            await Thumbnail.findByIdAndDelete(thumbnail._id);
 
-            const filename = `final-output-${Date.now()}.png`;
-            const filePath = path.join('images', filename);
+            const statusCode: number = genError?.statusCode === 429 ? 429 : 500;
+            const message: string =
+                genError?.statusCode === 429
+                    ? genError.message
+                    : 'Thumbnail generation failed. Please try again.';
 
-            // Create the images directory if it doesn't exist
-            fs.mkdirSync('images', { recursive: true });
-
-            // Write buffer to disk
-            fs.writeFileSync(filePath, imageBuffer);
-
-            // Upload to Cloudinary
-            const uploadResult = await cloudinary.uploader.upload(filePath, { resource_type: 'image' });
-            imageUrl = uploadResult.url;
-
-            // Remove temp file
-            fs.unlinkSync(filePath);
-
-        } catch (hfError: any) {
-            const errorStatus = hfError?.status || hfError?.code;
-            const errorMessage = hfError?.message || hfError?.toString();
-
-            console.error(`[HuggingFace API Error] Status: ${errorStatus}, Message: ${errorMessage}`);
-
-            // Check for quota / rate-limit
-            if (
-                errorStatus === 429 ||
-                errorMessage?.includes('RESOURCE_EXHAUSTED') ||
-                errorMessage?.includes('429') ||
-                errorMessage?.includes('rate limit')
-            ) {
-                console.warn(`[Quota Exceeded] Rate limit reached for user ${userId}`);
-                return res.status(429).json({ message: 'API quota exceeded. Please try again later.' });
-            }
-
-            // Fallback to Pollinations.ai
-            console.warn(`[Fallback] HuggingFace failed, using pollinations.ai for user ${userId}`);
-            try {
-                const sanitizedPrompt = encodeURIComponent(prompt.substring(0, 500));
-                imageUrl = `https://image.pollinations.ai/prompt/${sanitizedPrompt}`;
-                usedFallback = true;
-            } catch (fallbackError: any) {
-                console.error(`[Fallback Error] Pollinations.ai also failed: ${fallbackError.message}`);
-                return res.status(500).json({ message: 'Thumbnail generation failed' });
-            }
+            console.error(`[ThumbnailController] Generation failed: ${genError.message}`);
+            return res.status(statusCode).json({ message });
         }
 
-        // Persist result
-        thumbnail.image_url = imageUrl;
+        // 4. Persist the result
+        thumbnail.image_url = imageResult.imageUrl;
+        thumbnail.prompt_used = prompt;
         thumbnail.isGenerating = false;
-        if (usedFallback) {
-            thumbnail.prompt_used = `${thumbnail.prompt_used} (generated with fallback)`;
-        }
         await thumbnail.save();
 
+        console.log(`[ThumbnailController] Success via ${imageResult.provider} for user ${userId}`);
+
         res.json({
-            message: 'Thumbnail Generated' + (usedFallback ? ' (using fallback)' : ''),
+            message: `Thumbnail Generated`,
             thumbnail,
         });
 
     } catch (error: any) {
-        console.error(`[Generation Controller Error] ${error.message}`, error);
+        console.error(`[ThumbnailController] Unexpected error: ${error.message}`, error);
         res.status(500).json({ message: 'Thumbnail generation failed' });
     }
-}
+};
 
 // Controller for Thumbnail Deletion
 export const deleteThumbnail = async (req: Request, res: Response) => {
@@ -137,11 +80,14 @@ export const deleteThumbnail = async (req: Request, res: Response) => {
         const { id } = req.params;
         const { userId } = req.session;
 
-        await Thumbnail.findByIdAndDelete({ _id: id, userId });
+        // findOneAndDelete (not findByIdAndDelete, which only accepts an id
+        // and would silently ignore the userId filter) so a user can only
+        // ever delete their own thumbnails.
+        await Thumbnail.findOneAndDelete({ _id: id, userId });
 
         res.json({ message: 'Thumbnail deleted successfully' });
     } catch (error: any) {
-        console.error(`[Delete Thumbnail Error] ${error.message}`, error);
+        console.error(`[ThumbnailController] Delete error: ${error.message}`, error);
         res.status(500).json({ message: 'Failed to delete thumbnail' });
     }
-}
+};

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom"
+import { useLocation, useParams } from "react-router-dom"
 import { colorSchemes, type AspectRatio, type IThumbnail, type ThumbnailStyle } from "../assets/assets";
 import SoftBackDrop from "../components/SoftBackDrop";
 
@@ -15,7 +15,6 @@ const Generate = () => {
 
   const { id } = useParams();
   const {pathname} = useLocation();
-  const navigate = useNavigate()
   const {isLoggedIn} = useAuth();
 
 
@@ -31,12 +30,22 @@ const Generate = () => {
 
   const [styleDropdownOpen, setStyleDropdownOpen] = useState(false);
 
+  const resetForm = () => {
+    setTitle("");
+    setAdditionalDetails("");
+    setAspectRatio("16:9");
+    setColorSchemeId(colorSchemes[0].id);
+    setStyle("Bold & Graphic");
+  }
+
   const handleGenerate = async () => {
       if(!isLoggedIn) return toast.error('Please login to generate thumbnails')
       if(!title.trim()) return toast.error('Title is required')
       if(loading) return toast.error('Generation already in progress')
-      
+
       setLoading(true)
+      // Clear the previous result so the loader uses the newly selected aspect ratio
+      setThumbnail(null)
 
       try {
         const api_payload = {
@@ -50,7 +59,13 @@ const Generate = () => {
 
         const {data} = await api.post('/api/thumbnail/generate', api_payload);
         if(data.thumbnail){
-          navigate('/generate/' + data.thumbnail._id);
+          // Show the result here instead of navigating to /generate/:id — that
+          // page refills the form from the saved thumbnail, so the old inputs
+          // stuck around (even after a refresh). Now the form is ready for the
+          // next thumbnail, a refresh starts fresh, and the result stays
+          // available in My Generations.
+          setThumbnail(data.thumbnail as IThumbnail);
+          resetForm();
           toast.success(data.message);
         }
       } catch (error: any) {
@@ -60,7 +75,7 @@ const Generate = () => {
         console.error(`[API Error] Status: ${status}, Message: ${message}`);
         
         if (status === 429) {
-          toast.error('Quota exceeded. Please try again later');
+          toast.error(message || 'Quota exceeded. Please try again later');
         } else if (status === 500) {
           toast.error('Server error. Thumbnail generation failed');
         } else {
@@ -74,16 +89,28 @@ const Generate = () => {
   const fetchThumbnail = async () => {
    try {
     const {data} = await api.get(`/api/user/thumbnail/${id}`);
-    setThumbnail(data?.thumbnail as IThumbnail);
-    setLoading(!data?.thumbnail?.image_url);
-    setAdditionalDetails(data?.thumbnail?.user_prompt)
-    setTitle(data?.thumbnail?.title)
-    setColorSchemeId(data?.thumbnail?.color_scheme)
-    setAspectRatio(data?.thumbnail?.aspect_ratio)
-    setStyle(data?.thumbnail?.style)
+
+    if (!data?.thumbnail) {
+      // Record doesn't exist — e.g. generation failed server-side and was
+      // rolled back. Stop polling instead of spinning forever with no
+      // feedback (loading would otherwise stay stuck true indefinitely).
+      setThumbnail(null);
+      setLoading(false);
+      toast.error('This thumbnail could not be generated. Please try again.');
+      return;
+    }
+
+    setThumbnail(data.thumbnail as IThumbnail);
+    setLoading(!data.thumbnail.image_url);
+    setAdditionalDetails(data.thumbnail.user_prompt)
+    setTitle(data.thumbnail.title)
+    setColorSchemeId(data.thumbnail.color_scheme)
+    setAspectRatio(data.thumbnail.aspect_ratio)
+    setStyle(data.thumbnail.style)
    } catch (error: any) {
         console.log(error);
-        toast.error(error?.response?.data?.message || error.message)   
+        toast.error(error?.response?.data?.message || error.message)
+        setLoading(false);
    }
 }
 
@@ -99,9 +126,13 @@ const Generate = () => {
     }
   }, [id, loading, isLoggedIn])
 
+  // Coming from a saved thumbnail's page (/generate/:id) back to /generate:
+  // the component is reused, so clear what that page loaded into the form
   useEffect(()=>{
-    if(!id && thumbnail){
+    if(!id){
       setThumbnail(null)
+      setLoading(false)
+      resetForm()
     }
   },[pathname])
 
@@ -150,7 +181,7 @@ const Generate = () => {
 
                 {/* BUTTON  */}
                 {!id && (
-                  <button onClick={handleGenerate} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:cursor-not-allowed transition-colors">
+                  <button onClick={handleGenerate} disabled={loading} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:cursor-not-allowed transition-colors">
                     {loading ? "Generating..." : "Generate Thumbnail"}
                   </button>
                 )}
@@ -160,7 +191,8 @@ const Generate = () => {
             <div>
               <div className="p-6 rounded-2xl bg-white/8 border-white/10 shadow-xl">
                 <h2 className="text-lg font-semibold text-zinc-100 mb-4">Preview</h2>
-                <PreviewPanel thumbnail={thumbnail} isLoading={loading} aspectRatio={aspectRatio} />
+                {/* A shown thumbnail keeps its own ratio, even after the form resets */}
+                <PreviewPanel thumbnail={thumbnail} isLoading={loading} aspectRatio={thumbnail?.aspect_ratio ?? aspectRatio} />
               </div>
             </div>
           </div>

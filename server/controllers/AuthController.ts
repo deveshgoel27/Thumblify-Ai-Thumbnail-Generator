@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import User from "../models/User";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
+import { sendPasswordResetEmail } from "../services/emailService";
  
 //   Controllers for user registeration 
 export const registerUser = async (req: Request, res: Response) => {
@@ -78,8 +80,8 @@ export const logoutUser = async (req: Request, res: Response) => {
             console.log(error);
             return res.status(500).json({message: error.message})
         }
+        return res.json({message: 'Logout successful'})
      })
-     return res.json({message: 'Logout successful'})
 }
 
 // Controller for user verify
@@ -99,3 +101,65 @@ export const verifyUser = async (req: Request, res: Response) => {
         res.status(500).json({message: error.message})  
     }
 }
+
+// Controller: Send password reset email
+export const forgotPassword = async (req: Request, res: Response) => {
+    try {
+        const { email } = req.body;
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            // Don't reveal whether email exists
+            return res.json({ message: 'If that email is registered, a reset link has been sent.' });
+        }
+
+        // Generate a secure random token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+        user.resetPasswordToken = token;
+        user.resetPasswordExpires = expires;
+        await user.save();
+
+        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const resetUrl = `${clientUrl}/reset-password?token=${token}`;
+
+        await sendPasswordResetEmail(user.email, resetUrl);
+
+        return res.json({ message: 'If that email is registered, a reset link has been sent.' });
+    } catch (error: any) {
+        console.error('[forgotPassword]', error);
+        res.status(500).json({ message: 'Failed to send reset email. Try again.' });
+    }
+};
+
+// Controller: Reset password using token
+export const resetPassword = async (req: Request, res: Response) => {
+    try {
+        const { token, password } = req.body;
+
+        if (!token || !password) {
+            return res.status(400).json({ message: 'Token and new password are required.' });
+        }
+
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: new Date() }, // token must not be expired
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: 'Reset link is invalid or has expired.' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(password, salt);
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+        await user.save();
+
+        return res.json({ message: 'Password reset successful. You can now log in.' });
+    } catch (error: any) {
+        console.error('[resetPassword]', error);
+        res.status(500).json({ message: 'Password reset failed. Try again.' });
+    }
+};

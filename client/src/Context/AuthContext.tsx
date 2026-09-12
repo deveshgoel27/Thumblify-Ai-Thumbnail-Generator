@@ -11,6 +11,8 @@ interface AuthContextProps {
     login: (user: {email: string; password: string}) => Promise<void>;
     signUp: (user:  {name: string; email: string; password: string}) => Promise<void>;
     logout: () => Promise<void>;
+    forgotPassword: (email: string) => Promise<void>;
+    resetPassword: (token: string, password: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextProps>({
@@ -21,6 +23,8 @@ const AuthContext = createContext<AuthContextProps>({
     login: async ()=> {},
     signUp: async ()=> {},
     logout: async ()=> {},
+    forgotPassword: async ()=> {},
+    resetPassword: async () => false,
 })
 
 export const AuthProvider = ({children}: {children: React.ReactNode}) => {
@@ -67,6 +71,26 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
              }
     }
 
+    const forgotPassword = async (email: string) => {
+        try {
+            const { data } = await api.post('/api/auth/forgot-password', { email });
+            toast.success(data.message);
+        } catch (error: any) {
+            toast.error(error.response?.data?.message || error.message);
+        }
+    };
+
+    const resetPassword = async (token: string, password: string): Promise<boolean> => {
+        try {
+            const { data } = await api.post('/api/auth/reset-password', { token, password });
+            toast.success(data.message);
+            return true;
+        } catch (error: any) {
+            toast.error(error.response?.data?.message || error.message);
+            return false;
+        }
+    };
+
      const fetchUser = async ()=> {
          try {
                 const {data} = await api.get('/api/auth/verify');
@@ -88,7 +112,8 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const value = {
           user,setUser,
           isLoggedIn,setIsLoggedIn,
-          signUp,login,logout
+          signUp,login,logout,
+          forgotPassword,resetPassword
     }
 
     return (
