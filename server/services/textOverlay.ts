@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 
@@ -10,7 +11,15 @@ import { Resvg } from '@resvg/resvg-js';
  * bundled font, which also renders identically locally and on Vercel.
  */
 
-const FONT_PATH = path.join(__dirname, '..', 'assets', 'fonts', 'Anton-Regular.ttf');
+// The font ships with the code (see vercel.json includeFiles). Depending on how
+// the serverless bundle is laid out, it can sit next to the compiled file or at
+// the project root, so check both.
+const FONT_CANDIDATES = [
+    path.join(__dirname, '..', 'assets', 'fonts', 'Anton-Regular.ttf'),
+    path.join(process.cwd(), 'assets', 'fonts', 'Anton-Regular.ttf'),
+];
+
+const FONT_PATH = FONT_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? FONT_CANDIDATES[0];
 const FONT_FAMILY = 'Anton';
 
 const fontOptions = {
